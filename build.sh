@@ -1,7 +1,7 @@
 #!/bin/sh
 
 BUILD_DIR=build
-PICO_SDK_DIR=pico-sdk
+PICO_SDK_DIR=../pico-sdk
 
 main () {
 	local cur_dir=$PWD

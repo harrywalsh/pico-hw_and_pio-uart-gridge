@@ -6,10 +6,12 @@
 #include <hardware/irq.h>
 #include <hardware/structs/sio.h>
 #include <hardware/uart.h>
+#include <hardware/structs/pio.h>
 #include <pico/multicore.h>
 #include <pico/stdlib.h>
 #include <string.h>
 #include <tusb.h>
+#include <uart_rx.pio.h>
 
 #if !defined(MIN)
 #define MIN(a, b) ((a > b) ? b : a)
@@ -28,6 +30,9 @@ typedef struct {
 	uart_inst_t *const inst;
 	uint8_t tx_pin;
 	uint8_t rx_pin;
+        uint    sm;
+        PIO     pio;
+        uint    offset;
 } uart_id_t;
 
 typedef struct {
@@ -42,7 +47,7 @@ typedef struct {
 	mutex_t usb_mtx;
 } uart_data_t;
 
-const uart_id_t UART_ID[CFG_TUD_CDC] = {
+uart_id_t UART_ID[CFG_TUD_CDC] = {
 	{
 		.inst = uart0,
 		.tx_pin = 0,
@@ -51,6 +56,10 @@ const uart_id_t UART_ID[CFG_TUD_CDC] = {
 		.inst = uart1,
 		.tx_pin = 4,
 		.rx_pin = 5,
+	},{
+		.inst = 0,
+		.tx_pin = 8,
+		.rx_pin = 9,
 	}
 };
 
@@ -94,27 +103,35 @@ static inline uint stopbits_usb2uart(uint8_t stop_bits)
 
 void update_uart_cfg(uint8_t itf)
 {
-	const uart_id_t *ui = &UART_ID[itf];
+	uart_id_t *ui = &UART_ID[itf];
 	uart_data_t *ud = &UART_DATA[itf];
 
 	mutex_enter_blocking(&ud->lc_mtx);
 
-	if (ud->usb_lc.bit_rate != ud->uart_lc.bit_rate) {
+        if (ui->inst != 0) { //regular uart
+	    if (ud->usb_lc.bit_rate != ud->uart_lc.bit_rate) {
 		uart_set_baudrate(ui->inst, ud->usb_lc.bit_rate);
 		ud->uart_lc.bit_rate = ud->usb_lc.bit_rate;
-	}
+	    }
 
-	if ((ud->usb_lc.stop_bits != ud->uart_lc.stop_bits) ||
-	    (ud->usb_lc.parity != ud->uart_lc.parity) ||
-	    (ud->usb_lc.data_bits != ud->uart_lc.data_bits)) {
-		uart_set_format(ui->inst,
+	    if ((ud->usb_lc.stop_bits != ud->uart_lc.stop_bits) ||
+	        (ud->usb_lc.parity != ud->uart_lc.parity) ||
+	        (ud->usb_lc.data_bits != ud->uart_lc.data_bits)) {
+		    uart_set_format(ui->inst,
 				databits_usb2uart(ud->usb_lc.data_bits),
 				stopbits_usb2uart(ud->usb_lc.stop_bits),
 				parity_usb2uart(ud->usb_lc.parity));
-		ud->uart_lc.data_bits = ud->usb_lc.data_bits;
-		ud->uart_lc.parity = ud->usb_lc.parity;
-		ud->uart_lc.stop_bits = ud->usb_lc.stop_bits;
-	}
+		    ud->uart_lc.data_bits = ud->usb_lc.data_bits;
+		    ud->uart_lc.parity = ud->usb_lc.parity;
+	            ud->uart_lc.stop_bits = ud->usb_lc.stop_bits;
+	    }
+        } else {
+	    if (ud->usb_lc.bit_rate != ud->uart_lc.bit_rate) {
+                uart_rx_baud(ui->pio,ui->sm,ud->usb_lc.bit_rate);
+		ud->uart_lc.bit_rate = ud->usb_lc.bit_rate;
+	    }
+        }
+
 
 	mutex_exit(&ud->lc_mtx);
 }
@@ -196,7 +213,8 @@ void core1_entry(void)
 void uart_read_bytes(uint8_t itf) {
 	const uart_id_t *ui = &UART_ID[itf];
 
-	if (uart_is_readable(ui->inst)) {
+        if (ui->inst != 0){
+	    if (uart_is_readable(ui->inst)) {
 		uart_data_t *ud = &UART_DATA[itf];
 
 		mutex_enter_blocking(&ud->uart_mtx);
@@ -208,7 +226,20 @@ void uart_read_bytes(uint8_t itf) {
 		}
 
 		mutex_exit(&ud->uart_mtx);
-	}
+	    }
+        } else {
+            if (!pio_sm_is_rx_fifo_empty(ui->pio, ui->sm)) {
+                uart_data_t *ud = &UART_DATA[itf];
+                mutex_enter_blocking(&ud->uart_mtx);
+                while (!pio_sm_is_rx_fifo_empty(ui->pio, ui->sm) &&
+                        ud->uart_pos < BUFFER_SIZE) {
+                        ud->uart_buffer[ud->uart_pos] =  uart_rx_program_getc(ui->pio, ui->sm);
+                        ud->uart_pos++;
+                }
+                mutex_exit(&ud->uart_mtx);
+            }
+       }
+        
 }
 
 void uart_write_bytes(uint8_t itf) {
@@ -217,22 +248,26 @@ void uart_write_bytes(uint8_t itf) {
 	if (ud->usb_pos) {
 		const uart_id_t *ui = &UART_ID[itf];
 
-		mutex_enter_blocking(&ud->usb_mtx);
+                if (ui->inst != 0){
+	   	    mutex_enter_blocking(&ud->usb_mtx);
 
-		uart_write_blocking(ui->inst, ud->usb_buffer, ud->usb_pos);
-		ud->usb_pos = 0;
+		    uart_write_blocking(ui->inst, ud->usb_buffer, ud->usb_pos);
+		    ud->usb_pos = 0;
 
-		mutex_exit(&ud->usb_mtx);
+		    mutex_exit(&ud->usb_mtx);
+               }
 	}
 }
 
 void init_uart_data(uint8_t itf) {
-	const uart_id_t *ui = &UART_ID[itf];
+	uart_id_t *ui = &UART_ID[itf];
 	uart_data_t *ud = &UART_DATA[itf];
 
-	/* Pinmux */
-	gpio_set_function(ui->tx_pin, GPIO_FUNC_UART);
-	gpio_set_function(ui->rx_pin, GPIO_FUNC_UART);
+        if (ui->inst != 0){
+	    /* Pinmux */
+	    gpio_set_function(ui->tx_pin, GPIO_FUNC_UART);
+	    gpio_set_function(ui->rx_pin, GPIO_FUNC_UART);
+        }
 
 	/* USB CDC LC */
 	ud->usb_lc.bit_rate = DEF_BIT_RATE;
@@ -255,12 +290,20 @@ void init_uart_data(uint8_t itf) {
 	mutex_init(&ud->uart_mtx);
 	mutex_init(&ud->usb_mtx);
 
-	/* UART start */
-	uart_init(ui->inst, ud->usb_lc.bit_rate);
-	uart_set_hw_flow(ui->inst, false, false);
-	uart_set_format(ui->inst, databits_usb2uart(ud->usb_lc.data_bits),
+        if (ui->inst != 0){
+	    /* UART start */
+	    uart_init(ui->inst, ud->usb_lc.bit_rate);
+	    uart_set_hw_flow(ui->inst, false, false);
+	    uart_set_format(ui->inst, databits_usb2uart(ud->usb_lc.data_bits),
 			stopbits_usb2uart(ud->usb_lc.stop_bits),
 			parity_usb2uart(ud->usb_lc.parity));
+        } else {
+            // Set up the state machine we're going to use to receive them.
+            ui->pio = pio0;
+            ui->sm = 0;
+            ui->offset = pio_add_program(ui->pio, &uart_rx_program);
+            uart_rx_program_init(ui->pio, ui->sm, ui->offset, ui->rx_pin, ud->uart_lc.bit_rate);
+        }
 }
 
 int main(void)
