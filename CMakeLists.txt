@@ -11,6 +11,7 @@ pico_sdk_init()
 add_executable(uart_bridge uart-bridge.c usb-descriptors.c)
 
 pico_generate_pio_header(uart_bridge ${CMAKE_CURRENT_LIST_DIR}/uart_rx.pio)
+pico_generate_pio_header(uart_bridge ${CMAKE_CURRENT_LIST_DIR}/uart_tx.pio)
 
 target_include_directories(uart_bridge PUBLIC
 	./

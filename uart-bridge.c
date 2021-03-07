@@ -12,6 +12,7 @@
 #include <string.h>
 #include <tusb.h>
 #include <uart_rx.pio.h>
+#include <uart_tx.pio.h>
 
 #if !defined(MIN)
 #define MIN(a, b) ((a > b) ? b : a)
@@ -31,8 +32,8 @@ typedef struct {
 	uint8_t tx_pin;
 	uint8_t rx_pin;
         uint    sm;
-        PIO     pio;
-        uint    offset;
+        uint    roffset;
+        uint    toffset;
 } uart_id_t;
 
 typedef struct {
@@ -60,6 +61,7 @@ uart_id_t UART_ID[CFG_TUD_CDC] = {
 		.inst = 0,
 		.tx_pin = 8,
 		.rx_pin = 9,
+                .sm = 0,
 	}
 };
 
@@ -127,7 +129,8 @@ void update_uart_cfg(uint8_t itf)
 	    }
         } else {
 	    if (ud->usb_lc.bit_rate != ud->uart_lc.bit_rate) {
-                uart_rx_baud(ui->pio,ui->sm,ud->usb_lc.bit_rate);
+                uart_baud(pio0,ui->sm,ud->usb_lc.bit_rate);
+                uart_baud(pio1,ui->sm,ud->usb_lc.bit_rate);
 		ud->uart_lc.bit_rate = ud->usb_lc.bit_rate;
 	    }
         }
@@ -228,12 +231,12 @@ void uart_read_bytes(uint8_t itf) {
 		mutex_exit(&ud->uart_mtx);
 	    }
         } else {
-            if (!pio_sm_is_rx_fifo_empty(ui->pio, ui->sm)) {
+            if (!pio_sm_is_rx_fifo_empty(pio0, ui->sm)) {
                 uart_data_t *ud = &UART_DATA[itf];
                 mutex_enter_blocking(&ud->uart_mtx);
-                while (!pio_sm_is_rx_fifo_empty(ui->pio, ui->sm) &&
+                while (!pio_sm_is_rx_fifo_empty(pio0, ui->sm) &&
                         ud->uart_pos < BUFFER_SIZE) {
-                        ud->uart_buffer[ud->uart_pos] =  uart_rx_program_getc(ui->pio, ui->sm);
+                        ud->uart_buffer[ud->uart_pos] =  uart_rx_program_getc(pio0, ui->sm);
                         ud->uart_pos++;
                 }
                 mutex_exit(&ud->uart_mtx);
@@ -255,7 +258,14 @@ void uart_write_bytes(uint8_t itf) {
 		    ud->usb_pos = 0;
 
 		    mutex_exit(&ud->usb_mtx);
-               }
+               } else {
+                    mutex_enter_blocking(&ud->usb_mtx);
+                    for (size_t i = 0; i<ud->usb_pos; ++i) {
+                        uart_tx_program_putc(pio1, ui->sm, ud->usb_buffer[i]);
+                    }
+                    ud->usb_pos = 0;
+                    mutex_exit(&ud->usb_mtx);
+              }
 	}
 }
 
@@ -298,11 +308,12 @@ void init_uart_data(uint8_t itf) {
 			stopbits_usb2uart(ud->usb_lc.stop_bits),
 			parity_usb2uart(ud->usb_lc.parity));
         } else {
-            // Set up the state machine we're going to use to receive them.
-            ui->pio = pio0;
+            // Set up the state machine we're going to use to for rx/tx
             ui->sm = 0;
-            ui->offset = pio_add_program(ui->pio, &uart_rx_program);
-            uart_rx_program_init(ui->pio, ui->sm, ui->offset, ui->rx_pin, ud->uart_lc.bit_rate);
+            ui->roffset = pio_add_program(pio0, &uart_rx_program);
+            uart_rx_program_init(pio0, ui->sm, ui->roffset, ui->rx_pin, ud->uart_lc.bit_rate);
+            ui->toffset = pio_add_program(pio1, &uart_tx_program);
+            uart_tx_program_init(pio1, ui->sm, ui->toffset, ui->tx_pin, ud->uart_lc.bit_rate);
         }
 }
 

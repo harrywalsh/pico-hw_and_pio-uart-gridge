@@ -83,7 +83,7 @@ static inline void uart_rx_program_init(PIO pio, uint sm, uint offset, uint pin,
     pio_sm_set_enabled(pio, sm, true);
 }
 
-static inline void uart_rx_baud(PIO pio, uint sm, uint baud) {
+static inline void uart_baud(PIO pio, uint sm, uint baud) {
     float div = (float)clock_get_hz(clk_sys) / (8 * baud);
     pio_sm_set_clkdiv(pio,sm,div);
 }
