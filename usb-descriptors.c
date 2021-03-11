@@ -31,19 +31,19 @@
 #define USBD_CDC_2_EP_CMD 0x85
 #define USBD_CDC_3_EP_CMD 0x87
 #define USBD_CDC_4_EP_CMD 0x89
-//#define USBD_CDC_5_EP_CMD 0x8D
+
 #define USBD_CDC_0_EP_OUT 0x01
 #define USBD_CDC_1_EP_OUT 0x03
 #define USBD_CDC_2_EP_OUT 0x05
 #define USBD_CDC_3_EP_OUT 0x07
 #define USBD_CDC_4_EP_OUT 0x09
-//#define USBD_CDC_5_EP_OUT 0x0C
+
 #define USBD_CDC_0_EP_IN 0x82
 #define USBD_CDC_1_EP_IN 0x84
 #define USBD_CDC_2_EP_IN 0x86
 #define USBD_CDC_3_EP_IN 0x88
-#define USBD_CDC_4_EP_IN 0x8F // of 8A-8F,8F seems to be the only one to work
-//#define USBD_CDC_5_EP_IN 0x8C
+#define USBD_CDC_4_EP_IN 0x8E // 8D works at 9600, 8E seems to work best
+
 #define USBD_CDC_CMD_MAX_SIZE 8
 #define USBD_CDC_IN_OUT_MAX_SIZE 64
 
@@ -94,9 +94,6 @@ static const uint8_t usbd_desc_cfg[USBD_DESC_LEN] = {
 		USBD_CDC_CMD_MAX_SIZE, USBD_CDC_4_EP_OUT, USBD_CDC_4_EP_IN,
 		USBD_CDC_IN_OUT_MAX_SIZE),
 
-//	TUD_CDC_DESCRIPTOR(USBD_ITF_CDC_5, USBD_STR_CDC, USBD_CDC_5_EP_CMD,
-//		USBD_CDC_CMD_MAX_SIZE, USBD_CDC_5_EP_OUT, USBD_CDC_5_EP_IN,
-//		USBD_CDC_IN_OUT_MAX_SIZE),
 };
 
 static const char *const usbd_desc_str[] = {
