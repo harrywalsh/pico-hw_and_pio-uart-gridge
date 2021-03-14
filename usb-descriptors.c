@@ -32,17 +32,20 @@
 #define USBD_CDC_3_EP_CMD 0x87
 #define USBD_CDC_4_EP_CMD 0x89
 
+
 #define USBD_CDC_0_EP_OUT 0x01
 #define USBD_CDC_1_EP_OUT 0x03
 #define USBD_CDC_2_EP_OUT 0x05
 #define USBD_CDC_3_EP_OUT 0x07
 #define USBD_CDC_4_EP_OUT 0x09
 
+
 #define USBD_CDC_0_EP_IN 0x82
 #define USBD_CDC_1_EP_IN 0x84
 #define USBD_CDC_2_EP_IN 0x86
 #define USBD_CDC_3_EP_IN 0x88
 #define USBD_CDC_4_EP_IN 0x8E // 8D works at 9600, 8E seems to work best
+
 
 #define USBD_CDC_CMD_MAX_SIZE 8
 #define USBD_CDC_IN_OUT_MAX_SIZE 64

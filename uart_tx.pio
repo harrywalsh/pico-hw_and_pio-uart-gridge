@@ -16,9 +16,22 @@ bitloop:                   ; This loop will run 8 times (8n1 UART)
     out pins, 1            ; Shift 1 bit from OSR to the first OUT pin
     jmp x-- bitloop   [6]  ; Each loop iteration is 8 cycles.
 
+.program uart_txp
+.side_set 1 opt
+
+; An 8n1 UART transmit program.
+; OUT pin 0 and side-set pin 0 are both mapped to UART TX pin.
+
+    pull       side 1 [7]  ; Assert stop bit, or stall with line in idle state
+    set x, 8   side 0 [7]  ; Preload bit counter, assert start bit for 8 clocks
+bitloop:                   ; This loop will run 9 times (8p1 UART)
+    out pins, 1            ; Shift 1 bit from OSR to the first OUT pin
+    jmp x-- bitloop   [6]  ; Each loop iteration is 8 cycles.
+
 
 % c-sdk {
 #include "hardware/clocks.h"
+#include <hardware/uart.h>
 
 static inline void uart_tx_program_init(PIO pio, uint sm, uint offset, uint pin_tx, uint baud) {
     // Tell PIO to initially drive output-high on the selected pin, then map PIO
@@ -49,13 +62,26 @@ static inline void uart_tx_program_init(PIO pio, uint sm, uint offset, uint pin_
     pio_sm_set_enabled(pio, sm, true);
 }
 
-static inline void uart_tx_program_putc(PIO pio, uint sm, char c) {
-    pio_sm_put_blocking(pio, sm, (uint32_t)c);
+static inline void uart_tx_program_putc(PIO pio, uint sm, char c, char parity_setting) {
+    uint32_t cp;
+  
+    if (parity_setting!=UART_PARITY_NONE) {
+        uint16_t parity = c^(c>>1);
+        parity=parity^(parity>>2);
+        parity=parity^(parity>>4);
+        if (parity_setting==UART_PARITY_EVEN)
+            cp = ((parity&0x01)<<8)|c;
+        else
+            cp = ((parity^0x01)<<8)|c;
+    } else {
+        cp=(uint32_t)c;
+    }
+    pio_sm_put_blocking(pio, sm, cp);
 }
 
-static inline void uart_tx_program_puts(PIO pio, uint sm, const char *s) {
+static inline void uart_tx_program_puts(PIO pio, uint sm, const char *s, char parity_setting) {
     while (*s)
-        uart_tx_program_putc(pio, sm, *s++);
+        uart_tx_program_putc(pio, sm, *s++, parity_setting);
 }
 
 %}

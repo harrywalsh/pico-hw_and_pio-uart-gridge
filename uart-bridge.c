@@ -73,14 +73,18 @@ uart_id_t UART_ID[CFG_TUD_CDC] = {
 		.tx_pin = 16,
 		.rx_pin = 17,
         .sm = 2,
-
 	}
 };
 
 uart_data_t UART_DATA[CFG_TUD_CDC];
 
-uint    rx_offset=0;
-uint    tx_offset=0;
+
+uint rx_offset=0;
+uint rxp_offset=0;
+
+uint tx_offset=0;
+uint txp_offset=0;
+
 
 static inline uint databits_usb2uart(uint8_t data_bits)
 {
@@ -140,7 +144,7 @@ void update_uart_cfg(uint8_t itf)
 				parity_usb2uart(ud->usb_lc.parity));
 		    ud->uart_lc.data_bits = ud->usb_lc.data_bits;
 		    ud->uart_lc.parity = ud->usb_lc.parity;
-	            ud->uart_lc.stop_bits = ud->usb_lc.stop_bits;
+			ud->uart_lc.stop_bits = ud->usb_lc.stop_bits;
 	    }
     } else {
 	    if (ud->usb_lc.bit_rate != ud->uart_lc.bit_rate) {
@@ -148,6 +152,16 @@ void update_uart_cfg(uint8_t itf)
             uart_baud(pio1,ui->sm,ud->usb_lc.bit_rate);
 			ud->uart_lc.bit_rate = ud->usb_lc.bit_rate;
 	    }
+		if (ud->usb_lc.parity != ud->uart_lc.parity) {
+			ud->uart_lc.parity = ud->usb_lc.parity;
+			if (ud->usb_lc.parity == UART_PARITY_NONE) {
+				uart_rx_program_init(pio0, ui->sm, rx_offset, ui->rx_pin, ud->uart_lc.bit_rate);
+				uart_tx_program_init(pio1, ui->sm, tx_offset, ui->tx_pin, ud->uart_lc.bit_rate);
+			} else {
+				uart_rx_program_init(pio0, ui->sm, rxp_offset, ui->rx_pin, ud->uart_lc.bit_rate);
+        		uart_tx_program_init(pio1, ui->sm, txp_offset, ui->tx_pin, ud->uart_lc.bit_rate);
+			}
+		}
     }
 
 	mutex_exit(&ud->lc_mtx);
@@ -279,7 +293,7 @@ void uart_write_bytes(uint8_t itf) {
             tosend = MIN(tosend,bufspace);
 
             for (size_t i = 0; i<tosend; ++i) {
-                uart_tx_program_putc(pio1, ui->sm, ud->usb_buffer[ud->usb_snd+i]);
+        		uart_tx_program_putc(pio1, ui->sm, ud->usb_buffer[ud->usb_snd+i],ud->usb_lc.parity);
             }
             ud->usb_snd+=tosend;
         }
@@ -344,8 +358,13 @@ int main(void)
 
 	// store our PIO programs in tbe instruction registers
 	// we'll use pio0 for RX and pio1 for tx so only one copy of each is needed
+	// however we'll use a different program to send/receive with parity
 	rx_offset = pio_add_program(pio0, &uart_rx_program);
 	tx_offset = pio_add_program(pio1, &uart_tx_program);
+	rxp_offset = pio_add_program(pio0, &uart_rxp_program);
+	txp_offset = pio_add_program(pio1, &uart_txp_program);
+
+
 
 	for (itf = 0; itf < CFG_TUD_CDC; itf++)
 		init_uart_data(itf);
