@@ -21,7 +21,7 @@
 #define LED_PIN 25
 
 // might as well use our RAM
-#define BUFFER_SIZE 5120
+#define BUFFER_SIZE 2560
 
 #define DEF_BIT_RATE 9600
 #define DEF_STOP_BITS 1
@@ -73,6 +73,11 @@ uart_id_t UART_ID[CFG_TUD_CDC] = {
 		.tx_pin = 16,
 		.rx_pin = 17,
         .sm = 2,
+	},{
+		.inst = 0,
+		.tx_pin = 20,
+		.rx_pin = 21,
+        .sm = 3,
 	}
 };
 
@@ -155,7 +160,7 @@ void update_uart_cfg(uint8_t itf)
 		if (ud->usb_lc.parity != ud->uart_lc.parity) {
 			ud->uart_lc.parity = ud->usb_lc.parity;
 			if (ud->usb_lc.parity == UART_PARITY_NONE) {
-				uart_rx_program_init(pio0, ui->sm, rx_offset, ui->rx_pin, ud->uart_lc.bit_rate);
+			    uart_rx_program_init(pio0, ui->sm, rx_offset, ui->rx_pin, ud->uart_lc.bit_rate);
 				uart_tx_program_init(pio1, ui->sm, tx_offset, ui->tx_pin, ud->uart_lc.bit_rate);
 			} else {
 				uart_rx_program_init(pio0, ui->sm, rxp_offset, ui->rx_pin, ud->uart_lc.bit_rate);
